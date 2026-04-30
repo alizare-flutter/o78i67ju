@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+*.class
+venv/
+env/
+
+# Environment variables
+.env
+
+# Bot temporary files
+tmp_downloads/
+*.zip
+*.log

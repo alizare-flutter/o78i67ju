@@ -1,0 +1,6 @@
+aiogram>=3.4.0
+GitPython>=3.1.41
+yt-dlp>=2024.3.10
+aria2p>=0.11.2
+python-dotenv>=1.0.1
+SQLAlchemy>=2.0.25
