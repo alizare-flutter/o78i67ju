@@ -17,29 +17,40 @@ Before running the bot, ensure you have Python 3.9+ and the required CLI tools i
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y aria2 ffmpeg p7zip-full git
+sudo apt-get install -y aria2 ffmpeg p7zip-full git unzip
 ```
 
 ## ⚙️ Setup & Installation
 
-**1. Clone the repository:**
+You can download the bot using either **Git** or **Wget**.
+
+### Option 1: Using Git (Recommended)
 ```bash
 git clone https://github.com/YOUR_USERNAME/sandbox.git
 cd sandbox
 ```
 
-**2. Create the Virtual Environment:**
+### Option 2: Using Wget
+```bash
+wget https://github.com/YOUR_USERNAME/sandbox/archive/refs/heads/main.zip -O sandbox.zip
+unzip sandbox.zip
+cd sandbox-main
+```
+
+---
+
+**1. Create the Virtual Environment:**
 ```bash
 python3 -m venv venv
 source venv/bin/activate
 ```
 
-**3. Install Python Dependencies:**
+**2. Install Python Dependencies:**
 ```bash
 pip install -r requirements.txt
 ```
 
-**4. Environment Variables (.env):**
+**3. Environment Variables (.env):**
 Create a `.env` file in the root directory and add your bot credentials:
 ```env
 # Get this from @BotFather in Telegram
