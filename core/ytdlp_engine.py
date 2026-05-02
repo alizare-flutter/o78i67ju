@@ -34,8 +34,7 @@ def yt_dlp_download_sync(url: str, quality: str, updater: ProgressUpdater, tmp_d
         'progress_hooks':[my_hook],
         'quiet': True,
         'nocheckcertificate': True,
-        # اینجا فقط web قرار داده شد تا با کوکی‌ها تداخل نکنه
-        'extractor_args': {'youtube': {'player_client': ['web']}}
+        'extractor_args': {'youtube': {'player_client':['android', 'ios', 'web']}}
     }
 
     if cookies_txt:
