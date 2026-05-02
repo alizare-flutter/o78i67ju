@@ -4,3 +4,4 @@ yt-dlp[default]>=2024.3.10
 aria2p>=0.11.2
 python-dotenv>=1.0.1
 SQLAlchemy>=2.0.25
+yt-dlp-ejs

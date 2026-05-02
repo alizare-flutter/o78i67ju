@@ -34,7 +34,7 @@ def yt_dlp_download_sync(url: str, quality: str, updater: ProgressUpdater, tmp_d
         'progress_hooks':[my_hook],
         'quiet': True,
         'nocheckcertificate': True,
-        'extractor_args': {'youtube': {'player_client':['android', 'ios', 'web']}}
+        'extractor_args': {'youtube': {'player_client': ['android', 'ios', 'tv', 'web']}}
     }
 
     if cookies_txt:
@@ -52,7 +52,7 @@ async def download_media(url: str, quality: str, updater: ProgressUpdater, user_
     os.makedirs(tmp_dir, exist_ok=True)
 
     cookies_file = None
-    if user_cookies:
+    if user_cookies and len(user_cookies.strip()) > 20:
         cookies_file = os.path.join(tmp_dir, f"cookies_{uuid.uuid4().hex[:6]}.txt")
         with open(cookies_file, "w", encoding="utf-8") as f:
             f.write(user_cookies)
