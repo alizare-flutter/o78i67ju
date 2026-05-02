@@ -10,11 +10,20 @@ async def download_media(url: str, quality: str, updater: ProgressUpdater, user_
     os.makedirs(tmp_dir, exist_ok=True)
 
 
-    cookies_file = None
-    if user_cookies and len(user_cookies.strip()) > 20:
-        cookies_file = os.path.join(tmp_dir, f"cookies_{uuid.uuid4().hex[:6]}.txt")
-        with open(cookies_file, "w", encoding="utf-8") as f:
-            f.write(user_cookies.strip())
+    cmd =["yt-dlp", "--newline", "--no-warnings"]
+
+
+    cookies_file_to_delete = None
+    if user_cookies:
+        if os.path.isfile(user_cookies):
+
+            cmd.extend(["--cookies", user_cookies])
+        elif len(user_cookies.strip()) > 20:
+
+            cookies_file_to_delete = os.path.join(tmp_dir, f"cookies_{uuid.uuid4().hex[:6]}.txt")
+            with open(cookies_file_to_delete, "w", encoding="utf-8") as f:
+                f.write(user_cookies.strip())
+            cmd.extend(["--cookies", cookies_file_to_delete])
 
 
     if quality == "720p":
@@ -32,10 +41,6 @@ async def download_media(url: str, quality: str, updater: ProgressUpdater, user_
     file_id = uuid.uuid4().hex[:8]
     outtmpl = os.path.join(tmp_dir, f"{file_id}_%(title)s.%(ext)s")
 
-
-    cmd =["yt-dlp", "--newline", "--no-warnings"]
-    if cookies_file:
-        cmd.extend(["--cookies", cookies_file])
     cmd.extend(ytdlp_args)
     cmd.extend(["-o", outtmpl, url])
 
@@ -57,8 +62,6 @@ async def download_media(url: str, quality: str, updater: ProgressUpdater, user_
             break
 
         text = line.decode('utf-8', errors='ignore').strip()
-
-
         match = regex_progress.search(text)
         if match:
             try:
@@ -72,12 +75,12 @@ async def download_media(url: str, quality: str, updater: ProgressUpdater, user_
     await process.wait()
 
 
-    if cookies_file and os.path.exists(cookies_file):
-        os.remove(cookies_file)
+    if cookies_file_to_delete and os.path.exists(cookies_file_to_delete):
+        os.remove(cookies_file_to_delete)
 
 
     downloaded_files = glob.glob(os.path.join(tmp_dir, f"{file_id}_*"))
     if downloaded_files:
         return downloaded_files[0]
     else:
-        raise Exception("YouTube Download Failed! JS Challenge or Cookie issue.")
+        raise Exception("YouTube Download Failed! Check server IP or Cookies.")
