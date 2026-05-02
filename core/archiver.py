@@ -50,7 +50,7 @@ async def process_archive(file_path: str, comp_mode: str, password: str, updater
     all_files = sorted([
         os.path.join(dir_name, f)
         for f in os.listdir(dir_name)
-        if f.startswith(new_base + ".zip")
+        if f.startswith(new_base)
     ])
 
     if not all_files:
