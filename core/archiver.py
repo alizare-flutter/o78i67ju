@@ -27,6 +27,11 @@ async def process_archive(file_path: str, comp_mode: str, password: str, updater
 
     needs_split = file_size_mb > 95
     zip_path = os.path.join(dir_name, f"{new_base}.zip")
+
+    for f in os.listdir(dir_name):
+        if f.startswith(new_base):
+            os.remove(os.path.join(dir_name, f))
+
     cmd = ["7z", "a", "-tzip", "-mx=9"]
 
     if needs_split:
