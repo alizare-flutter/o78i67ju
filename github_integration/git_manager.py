@@ -73,13 +73,14 @@ async def push_to_github(user_id: int, user: User, file_paths: list, updater: Pr
 
                 encoded_name = urllib.parse.quote(fname)
                 raw_url = f"https://github.com/{repo}/raw/main/dl/{encoded_name}"
-                display_text = f"{fname}[{size_str}]"
-
+                display_text = f"{fname} `{size_str}`"
                 safe_display = html.escape(display_text)
                 links.append(f"📥 <b><a href='{raw_url}'>{safe_display}</a></b>")
 
-                new_links_content += f"- 📥 **[{display_text}]({raw_url})**\n"
-
+                new_links_content += (
+                    f"- 📥 [{fname}]({raw_url}) "
+                    f"`{size_str}`\n"
+                )
             default_header = "## 🔗 Direct Download Links\n\n"
 
             if os.path.exists(links_md_path):
