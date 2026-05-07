@@ -5,7 +5,7 @@ from aiogram import Router, F
 from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from database.crud import get_user
-from handlers.callbacks import prepare_download_task
+from handlers.callbacks import task_store
 from core.progress import ProgressUpdater
 from config import TG_API_ID, TG_API_HASH, BOT_TOKEN
 from core.tg_downloader import download_large_tg_file
@@ -34,17 +34,19 @@ async def handle_url(message: Message, state: FSMContext):
         return
 
     url = message.text.strip()
-    await state.update_data(target_url=url)
+    task_id = uuid.uuid4().hex[:8]
+    task_store[task_id] = {"target_url": url, "is_local_file": False}
+
     media_domains =["youtube.com", "youtu.be", "twitch.tv", "reddit.com", "vimeo.com", "soundcloud.com"]
     is_media = any(domain in url for domain in media_domains)
 
     if is_media:
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🌟 Best Quality", callback_data="qual_best")],[InlineKeyboardButton(text="📺 720p", callback_data="qual_720p"), InlineKeyboardButton(text="📱 480p", callback_data="qual_480p")],[InlineKeyboardButton(text="📉 360p", callback_data="qual_360p"), InlineKeyboardButton(text="🎵 Audio", callback_data="qual_audio")]
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🌟 Best Quality", callback_data=f"qual_best_{task_id}")],[InlineKeyboardButton(text="📺 720p", callback_data=f"qual_720p_{task_id}"), InlineKeyboardButton(text="📱 480p", callback_data=f"qual_480p_{task_id}")],[InlineKeyboardButton(text="📉 360p", callback_data=f"qual_360p_{task_id}"), InlineKeyboardButton(text="🎵 Audio", callback_data=f"qual_audio_{task_id}")]
         ])
         await message.answer("🎬 **Media link detected!**\nPlease select the desired quality:", reply_markup=keyboard, parse_mode="Markdown")
     else:
-        await state.update_data(quality="best")
-        await ask_compression(message)
+        task_store[task_id]["quality"] = "best"
+        await ask_compression(message, task_id)
 
 @router.message(F.document | F.video | F.photo | F.audio)
 async def handle_file(message: Message, state: FSMContext):
@@ -52,7 +54,6 @@ async def handle_file(message: Message, state: FSMContext):
     if not user or not user.github_token:
         await message.answer("⚠️ Please set your token via /set_token first.")
         return
-
 
     if message.document:
         file_name = message.document.file_name or f"Document_{message.message_id}"
@@ -97,9 +98,11 @@ async def handle_file(message: Message, state: FSMContext):
         await status_msg.edit_text(f"❌ Error downloading: {str(e)}")
         return
 
-    await state.update_data(target_url=file_path, quality="raw", is_local_file=True)
-    await ask_compression(message)
+    task_id = uuid.uuid4().hex[:8]
+    task_store[task_id] = {"target_url": file_path, "quality": "raw", "is_local_file": True}
+    await ask_compression(message, task_id)
 
-async def ask_compression(message: Message):
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📄 Raw (No Zip)", callback_data="comp_raw")],[InlineKeyboardButton(text="📦 Zip (Max Compression)", callback_data="comp_zip")],[InlineKeyboardButton(text="🔐 Zip with Password", callback_data="comp_pass")]])
+async def ask_compression(message: Message, task_id: str):
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📄 Raw (No Zip)", callback_data=f"comp_raw_{task_id}")],[InlineKeyboardButton(text="📦 Zip (Max Compression)", callback_data=f"comp_zip_{task_id}")],[InlineKeyboardButton(text="🔐 Zip with Password", callback_data=f"comp_pass_{task_id}")]
+    ])
     await message.answer("📥 **File ready!**\nHow should I process it?", reply_markup=keyboard, parse_mode="Markdown")
