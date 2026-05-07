@@ -12,16 +12,15 @@ async def download_media(url: str, quality: str, updater: ProgressUpdater, user_
     os.makedirs(tmp_dir, exist_ok=True)
 
     if quality == "720p":
-        ytdlp_args = ["-f", "bestvideo[height<=720]+bestaudio/best[height<=720]/best", "--merge-output-format", "mp4"]
+        ytdlp_args = ["-f", "bestvideo[height<=720]+bestaudio/best[height<=720]/best[height<=720]/bestvideo+bestaudio/best", "--merge-output-format", "mp4"]
     elif quality == "480p":
-        ytdlp_args = ["-f", "bestvideo[height<=480]+bestaudio/best[height<=480]/best", "--merge-output-format", "mp4"]
+        ytdlp_args = ["-f", "bestvideo[height<=480]+bestaudio/best[height<=480]/best[height<=480]/bestvideo+bestaudio/best", "--merge-output-format", "mp4"]
     elif quality == "360p":
-        ytdlp_args = ["-f", "bestvideo[height<=360]+bestaudio/best[height<=360]/best", "--merge-output-format", "mp4"]
+        ytdlp_args = ["-f", "bestvideo[height<=360]+bestaudio/best[height<=360]/best[height<=360]/bestvideo+bestaudio/best", "--merge-output-format", "mp4"]
     elif quality == "audio":
         ytdlp_args = ["-x", "--audio-format", "mp3"]
     else:
         ytdlp_args = ["-f", "bestvideo+bestaudio/best", "--merge-output-format", "mp4"]
-
     file_id = uuid.uuid4().hex[:8]
     dl_dir = os.path.join(tmp_dir, file_id)
     os.makedirs(dl_dir, exist_ok=True)
