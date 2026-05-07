@@ -37,9 +37,10 @@ async def download_media(url: str, quality: str, updater: ProgressUpdater, user_
             f.write(user_cookies.strip())
 
     async def run_ytdlp(use_cookies: bool) -> tuple[int, list[str]]:
+        YTDLP_PATH = "/usr/local/bin/yt-dlp" 
 
         cmd_parts = [
-            "yt-dlp", "--no-warnings", "--no-playlist",
+            YTDLP_PATH, "--no-warnings", "--no-playlist",
             "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             "--extractor-args", "youtube:player_client=web"
         ]
