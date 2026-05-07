@@ -10,7 +10,6 @@ from handlers.callbacks import task_store
 from core.progress import ProgressUpdater
 from config import TG_API_ID, TG_API_HASH, BOT_TOKEN
 from core.tg_downloader import download_large_tg_file
-from urllib.parse import urlparse, parse_qs
 router = Router()
 async def download_tg_file(bot, file_path: str, dest_path: str, updater: ProgressUpdater):
     url = f"https://api.telegram.org/file/bot{bot.token}/{file_path}"
@@ -37,31 +36,6 @@ async def handle_text(message: Message, state: FSMContext):
         found = re.findall(r'https?://[^\s]+', line)
         for url in found:
             url = url.strip()
-            if "youtu.be" in url or "youtube.com" in url:
-
-                parsed = urlparse(url)
-
-                clean_url = (
-                    f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
-                )
-
-                qs = parse_qs(parsed.query)
-
-                allowed = []
-
-                if "v" in qs:
-                    allowed.append(f"v={qs['v'][0]}")
-
-                if "list" in qs:
-                    allowed.append(f"list={qs['list'][0]}")
-
-                if "t" in qs:
-                    allowed.append(f"t={qs['t'][0]}")
-
-                if allowed:
-                    clean_url += "?" + "&".join(allowed)
-
-                url = clean_url
             url = re.sub(
                 r'[\u200b\u200c\u200d\ufeff]',
                 '',
