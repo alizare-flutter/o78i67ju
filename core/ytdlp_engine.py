@@ -28,7 +28,11 @@ async def download_media(url: str, quality: str, updater: ProgressUpdater, user_
             f.write(user_cookies.strip())
         user_cookies = cookies_file_to_delete
     async def run_ytdlp(with_cookies: bool) -> tuple[int, list[str]]:
-        cmd =["yt-dlp", "--newline", "--no-warnings", "--extractor-args", "youtube:player_client=android,web"]
+        cmd = [
+            "yt-dlp",
+            "--newline",
+            "--no-warnings"
+        ]
         if with_cookies and user_cookies and os.path.isfile(user_cookies) and os.path.getsize(user_cookies) > 50:
             cmd.extend(["--cookies", user_cookies])
         cmd.extend(ytdlp_args)
@@ -65,7 +69,10 @@ async def download_media(url: str, quality: str, updater: ProgressUpdater, user_
         downloaded_files = glob.glob(os.path.join(dl_dir, "*"))
     if cookies_file_to_delete and os.path.exists(cookies_file_to_delete):
         os.remove(cookies_file_to_delete)
-    if downloaded_files:
+    if returncode == 0 and downloaded_files:
         return downloaded_files[0]
-    else:
-        raise Exception(f"yt-dlp failed:\n" + "\n".join(all_output[-10:]))
+
+    raise Exception(
+        "yt-dlp failed:\n" +
+        "\n".join(all_output[-20:])
+    )
