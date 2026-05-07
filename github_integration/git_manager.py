@@ -3,6 +3,7 @@ import shutil
 import asyncio
 import urllib.parse
 import uuid
+import html 
 from datetime import datetime, timedelta
 from database.models import User
 from core.progress import ProgressUpdater
@@ -32,14 +33,12 @@ async def push_to_github(user_id: int, user: User, file_paths: list, updater: Pr
         if os.path.exists(repo_dir):
             shutil.rmtree(repo_dir, ignore_errors=True)
 
-
         try:
             updater.update_sync(30, "Cloning...", "Wait")
 
             clone_cmd = f"git clone --depth 1 {auth_url} {repo_dir}"
             proc = await asyncio.create_subprocess_shell(clone_cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
             stdout, stderr = await proc.communicate()
-
 
             if proc.returncode != 0:
                 error_msg = stderr.decode('utf-8', 'ignore')
@@ -74,7 +73,9 @@ async def push_to_github(user_id: int, user: User, file_paths: list, updater: Pr
                 raw_url = f"https://github.com/{repo}/raw/main/dl/{encoded_name}"
                 display_text = f"{fname} [{size_str}]"
 
-                links.append(f"📥 **[{display_text}]({raw_url})**")
+                safe_display = html.escape(display_text)
+                links.append(f"📥 <b><a href='{raw_url}'>{safe_display}</a></b>")
+
                 new_links_content += f"- 📥 **[{display_text}]({raw_url})**\n"
 
             default_header = "## 🔗 Direct Download Links\n\n"
