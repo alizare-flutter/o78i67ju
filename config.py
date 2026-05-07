@@ -6,6 +6,8 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DB_URL = os.getenv("DB_URL", "sqlite:///database/bot.db")
 YOUTUBE_COOKIES = os.getenv("YOUTUBE_COOKIES", "")
+if YOUTUBE_COOKIES and not os.path.isabs(YOUTUBE_COOKIES):
+    YOUTUBE_COOKIES = os.path.join(os.path.dirname(os.path.abspath(__file__)), YOUTUBE_COOKIES)
 TG_API_ID = int(os.getenv("TG_API_ID", 0))
 TG_API_HASH = os.getenv("TG_API_HASH", "")
 if not BOT_TOKEN:
