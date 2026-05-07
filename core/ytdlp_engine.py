@@ -3,6 +3,7 @@ import asyncio
 import uuid
 import re
 import glob
+import shlex
 from core.progress import ProgressUpdater
 
 async def download_media(url: str, quality: str, updater: ProgressUpdater, user_cookies: str = None):
@@ -36,23 +37,24 @@ async def download_media(url: str, quality: str, updater: ProgressUpdater, user_
             f.write(user_cookies.strip())
 
     async def run_ytdlp(use_cookies: bool) -> tuple[int, list[str]]:
-        cmd = [
-            "yt-dlp", "--newline", "--no-warnings",
-            "--no-playlist",
+
+        cmd_parts = [
+            "yt-dlp", "--no-warnings", "--no-playlist",
             "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             "--extractor-args", "youtube:player_client=web"
         ]
 
         if use_cookies and cookie_path:
-            cmd.extend(["--cookies", cookie_path])
+            cmd_parts.extend(["--cookies", cookie_path])
 
-        cmd.extend(ytdlp_args)
-        cmd.extend(["-o", outtmpl, url])
+        cmd_parts.extend(ytdlp_args)
+        cmd_parts.extend(["-o", outtmpl, url])
 
 
+        cmd_string = " ".join([shlex.quote(c) for c in cmd_parts])
 
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
+        process = await asyncio.create_subprocess_shell(
+            cmd_string,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             env=os.environ
@@ -65,17 +67,19 @@ async def download_media(url: str, quality: str, updater: ProgressUpdater, user_
             text = line.decode('utf-8', errors='ignore').strip()
             all_output.append(text)
 
+
             if "[download]" in text and "%" in text:
                 try:
                     parts = text.split()
                     percent = float(parts[1].replace('%', ''))
-                    updater.update_sync(percent, "Downloading...", "...")
+                    speed = parts[3] if len(parts) > 3 else "N/A"
+                    updater.update_sync(percent, speed, "...")
                 except: pass
 
         await process.wait()
         return process.returncode, all_output
 
-    updater.action_text = "Downloading (Attempt 1)"
+    updater.action_text = "Downloading"
 
 
     returncode, all_output = await run_ytdlp(use_cookies=(cookie_path is not None))
@@ -94,4 +98,5 @@ async def download_media(url: str, quality: str, updater: ProgressUpdater, user_
     if downloaded_files and returncode == 0:
         return downloaded_files[0]
     else:
-        raise Exception(f"yt-dlp failed:\n" + "\n".join(all_output[-10:]))
+
+        raise Exception(f"yt-dlp failed:\n" + "\n".join(all_output))
