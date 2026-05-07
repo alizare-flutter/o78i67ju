@@ -96,11 +96,13 @@ YOUTUBE_COOKIES=youtube_cookies.txt
 python bot.py
 ```
 
-Or with PM2 for production:
+**For production (using PM2):**
 ```bash
-pm2 start bot.py --name "rgit-bot" --interpreter python3
+pm2 start bot.py --name "rgit-bot" --interpreter ./venv/bin/python
 pm2 save
 ```
+
+> ⚠️ **Important Note for YouTube Cookies:** If you plan to use `YOUTUBE_COOKIES` to bypass YouTube restrictions, it is highly recommended to run the bot using **`screen`** instead of `PM2`. `PM2` often creates an isolated environment that may fail to initialize the dependencies (like node/deno) required for cookie-based authentication.
 
 ---
 
@@ -121,7 +123,7 @@ pm2 save
 
 Telegram's standard Bot API restricts file downloads to **20MB**. To bypass this and download files up to **2GB**, you must provide your Telegram API credentials.
 
-1. Log in to [my.telegram.org](https://my.telegram.org).
+1. Log in to[my.telegram.org](https://my.telegram.org).
 2. Go to **API development tools**.
 3. Create a new application (if you haven't already).
 4. Copy your **App api_id** and **App api_hash**.
@@ -171,7 +173,7 @@ Since GitHub limits file sizes to 100MB, the bot splits large files into multipl
 
 ### 💻 On Windows / PC
 1. Download all parts (`.001`, `.002`, etc.) and put them in the **same folder**.
-2. Install [7-Zip](https://www.7-zip.org/) or [WinRAR](https://www.win-rar.com/).
+2. Install [7-Zip](https://www.7-zip.org/) or[WinRAR](https://www.win-rar.com/).
 3. Right-click on the **`.zip.001`** file and select **Extract Here**.
 
 ---
