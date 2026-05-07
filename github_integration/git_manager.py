@@ -3,25 +3,24 @@ import shutil
 import asyncio
 import urllib.parse
 import uuid
-import html 
+import html
 from datetime import datetime, timedelta
 from database.models import User
 from core.progress import ProgressUpdater
 
 git_locks = {}
-
 async def push_to_github(user_id: int, user: User, file_paths: list, updater: ProgressUpdater):
     repo = user.github_repo
 
     if repo not in git_locks:
         git_locks[repo] = asyncio.Lock()
 
-    updater.action_text = "⏳ Waiting in Queue"
-    updater.update_sync(5, "Queue", "Wait")
+    updater.action_text = "Waiting in Queue"
+    updater.update_sync(5, "-", "-")
 
     async with git_locks[repo]:
-        updater.action_text = "🚀 Uploading to GitHub"
-        updater.update_sync(10, "Connecting...", "Wait")
+        updater.action_text = "Uploading to GitHub"
+        updater.update_sync(10, "-", "-")
 
         token = user.github_token
         safe_token = urllib.parse.quote(token)
@@ -34,7 +33,8 @@ async def push_to_github(user_id: int, user: User, file_paths: list, updater: Pr
             shutil.rmtree(repo_dir, ignore_errors=True)
 
         try:
-            updater.update_sync(30, "Cloning...", "Wait")
+            updater.action_text = "Cloning Repository"
+            updater.update_sync(30, "-", "-")
 
             clone_cmd = f"git clone --depth 1 {auth_url} {repo_dir}"
             proc = await asyncio.create_subprocess_shell(clone_cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
@@ -44,7 +44,9 @@ async def push_to_github(user_id: int, user: User, file_paths: list, updater: Pr
                 error_msg = stderr.decode('utf-8', 'ignore')
                 raise Exception(f"Git clone failed! Check your Repo name or Token.\n{error_msg}")
 
-            updater.update_sync(60, "Copying...", "Wait")
+            updater.action_text = "Copying Files"
+            updater.update_sync(60, "-", "-")
+
             dl_dir = os.path.join(repo_dir, "dl")
             os.makedirs(dl_dir, exist_ok=True)
 
@@ -71,7 +73,7 @@ async def push_to_github(user_id: int, user: User, file_paths: list, updater: Pr
 
                 encoded_name = urllib.parse.quote(fname)
                 raw_url = f"https://github.com/{repo}/raw/main/dl/{encoded_name}"
-                display_text = f"{fname} [{size_str}]"
+                display_text = f"{fname}[{size_str}]"
 
                 safe_display = html.escape(display_text)
                 links.append(f"📥 <b><a href='{raw_url}'>{safe_display}</a></b>")
@@ -102,7 +104,8 @@ async def push_to_github(user_id: int, user: User, file_paths: list, updater: Pr
             with open(links_md_path, "w", encoding="utf-8") as f:
                 f.write(preserved_header + new_links_content + "\n" + old_links)
 
-            updater.update_sync(80, "Pushing to GitHub...", "Wait")
+            updater.action_text = "Pushing to GitHub"
+            updater.update_sync(80, "-", "-")
 
             commands =[
                 f"cd {repo_dir}",
