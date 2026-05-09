@@ -12,13 +12,13 @@ git_locks = {}
 async def push_to_github(user_id: int, user: User, file_paths: list, updater: ProgressUpdater):
     repo = user.github_repo
 
-    if repo not in git_locks:
-        git_locks[repo] = asyncio.Lock()
+    if user_id not in git_locks:
+        git_locks[user_id] = asyncio.Lock()
 
     updater.action_text = "Waiting in Queue"
     updater.update_sync(5, "-", "-")
 
-    async with git_locks[repo]:
+    async with git_locks[user_id]:
         updater.action_text = "Uploading to GitHub"
         updater.update_sync(10, "-", "-")
 
