@@ -37,6 +37,7 @@ async def download_media(url: str, quality: str, updater: ProgressUpdater, user_
     async def run_ytdlp(use_cookies: bool) -> tuple[int, list[str]]:
         cmd_parts = [
             "yt-dlp",
+            "--socket-timeout", "30",
             "--no-warnings", "--no-playlist",
             "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         ]

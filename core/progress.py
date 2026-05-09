@@ -13,7 +13,7 @@ class ProgressUpdater:
 
     async def _edit_message(self, text):
         try:
-            await self.message.edit_text(text, parse_mode="Markdown")
+            await self.message.edit_text(text, parse_mode="HTML")
         except Exception:
             pass
 
@@ -31,8 +31,8 @@ class ProgressUpdater:
         filled = int(percentage / 10)
         bar = '█' * filled + '░' * (10 - filled)
         text = (
-            f"⏳ **{self.action_text}... {percentage:.1f}%**\n"
-            f"`[{bar}]`\n"
-            f"🚀 **Speed:** {speed} | ⏱ **ETA:** {eta}"
+            f"⏳ <b>{self.action_text}... {percentage:.1f}%</b>\n"
+            f"<code>[{bar}]</code>\n"
+            f"🚀 <b>Speed:</b> {speed} | ⏱ <b>ETA:</b> {eta}"
         )
         asyncio.run_coroutine_threadsafe(self._edit_message(text), self.loop)

@@ -85,12 +85,17 @@ async def run_batch(status_msg: Message, batch_id: str, chat_id: int):
     success_links = []
     failed_links =[]
 
-    await status_msg.edit_text(f"🚀 **Processing {len(urls)} link(s)...**\nPlease wait.", parse_mode="Markdown")
+    await status_msg.edit_text(f"🚀 <b>Processing {len(urls)} link(s)...</b>\nPlease wait.", parse_mode="HTML")
 
     for idx, url in enumerate(urls, 1):
+        file_msg = None
         try:
-
-            file_msg = await status_msg.answer(f"🔄 **[{idx}/{len(urls)}] Processing:** `{url[:40]}...`", parse_mode="Markdown", disable_web_page_preview=True)
+            safe_url = html.escape(url[:40])
+            file_msg = await status_msg.answer(
+                f"🔄 <b>[{idx}/{len(urls)}] Processing:</b> <code>{safe_url}...</code>",
+                parse_mode="HTML",
+                disable_web_page_preview=True
+            )
             updater = ProgressUpdater(file_msg, action_text="Downloading File")
 
             downloaded_file = None
@@ -113,27 +118,29 @@ async def run_batch(status_msg: Message, batch_id: str, chat_id: int):
                 try:
                     raw_links = await push_to_github(chat_id, user, final_files, updater)
                     success_links.extend(raw_links)
-                    # await file_msg.edit_text(f"✅ **[{idx}/{len(urls)}] Uploaded!**", parse_mode="Markdown")
                     await file_msg.delete()
-
                 finally:
                     for f in final_files:
                         if os.path.exists(f): os.remove(f)
             finally:
-                if downloaded_file and os.path.exists(downloaded_file):
+                if downloaded_file and not is_local and os.path.exists(downloaded_file):
                     os.remove(downloaded_file)
 
         except Exception as e:
             error_text = html.escape(str(e).replace('\n', ' '))
             if len(error_text) > 200:
                 error_text = error_text[:200] + "..."
-            failed_links.append(f"❌ <code>{url[:30]}</code> -> {error_text}")
-            await file_msg.edit_text(f"❌ **[{idx}/{len(urls)}] Failed!**", parse_mode="Markdown")
 
+            failed_links.append(f"❌ <code>{html.escape(url[:30])}</code> -> {error_text}")
+
+            if file_msg:
+                try:
+                    await file_msg.edit_text(f"❌ <b>[{idx}/{len(urls)}] Failed!</b>\n<code>{error_text}</code>", parse_mode="HTML")
+                except:
+                    pass
 
         if idx < len(urls):
             await asyncio.sleep(5)
-
 
     final_text = f"🏁 <b>Batch Completed! ({len(urls)} Links)</b>\n\n"
     if success_links:
