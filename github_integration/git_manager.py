@@ -132,3 +132,96 @@ async def push_to_github(user_id: int, user: User, file_paths: list, updater: Pr
         finally:
             if os.path.exists(clone_dir):
                 shutil.rmtree(clone_dir, ignore_errors=True)
+async def _update_repo_tree(user: User, tree_items: list, commit_message: str):
+    repo = user.github_repo
+    token = user.github_token
+    api_base = f"https://api.github.com/repos/{repo}"
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
+
+    async with aiohttp.ClientSession(headers=headers) as session:
+        async with session.get(f"{api_base}/git/refs/heads/main") as resp:
+            ref_data = await resp.json()
+            commit_sha = ref_data['object']['sha']
+
+        async with session.get(f"{api_base}/git/commits/{commit_sha}") as resp:
+            commit_data = await resp.json()
+            base_tree_sha = commit_data['tree']['sha']
+
+        async with session.post(f"{api_base}/git/trees", json={
+            "base_tree": base_tree_sha,
+            "tree": tree_items
+        }) as resp:
+            tree_data = await resp.json()
+            new_tree_sha = tree_data['sha']
+
+        async with session.post(f"{api_base}/git/commits", json={
+            "message": commit_message,
+            "tree": new_tree_sha,
+            "parents":[commit_sha]
+        }) as resp:
+            new_commit_data = await resp.json()
+            new_commit_sha = new_commit_data['sha']
+
+        await session.patch(f"{api_base}/git/refs/heads/main", json={"sha": new_commit_sha, "force": True})
+
+async def delete_file_from_github(user: User, filename: str):
+    repo = user.github_repo
+    token = user.github_token
+    api_base = f"https://api.github.com/repos/{repo}"
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
+
+    async with aiohttp.ClientSession(headers=headers) as session:
+        links_md_path = "Links.md"
+        async with session.get(f"{api_base}/contents/{links_md_path}") as resp:
+            if resp.status != 200:
+                raise Exception("Links.md not found.")
+            file_info = await resp.json()
+            links_md_content = base64.b64decode(file_info['content']).decode('utf-8')
+
+        new_lines =[]
+        for line in links_md_content.split('\n'):
+            if f"[{filename}]" not in line and f"{filename} `" not in line:
+                new_lines.append(line)
+        new_links_md = '\n'.join(new_lines)
+
+        tree_items =[
+            {"path": f"dl/{filename}", "mode": "100644", "type": "blob", "sha": None}
+        ]
+
+        async with session.post(f"{api_base}/git/blobs", json={
+            "content": base64.b64encode(new_links_md.encode('utf-8')).decode('utf-8'),
+            "encoding": "base64"
+        }) as resp:
+            blob_data = await resp.json()
+            tree_items.append({"path": links_md_path, "mode": "100644", "type": "blob", "sha": blob_data['sha']})
+
+    await _update_repo_tree(user, tree_items, f"🗑️ Delete {filename} [skip ci]")
+
+async def clear_github_repo(user: User):
+    repo = user.github_repo
+    token = user.github_token
+    api_base = f"https://api.github.com/repos/{repo}"
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.v3+json"}
+
+    async with aiohttp.ClientSession(headers=headers) as session:
+        async with session.get(f"{api_base}/contents/dl") as resp:
+            if resp.status != 200:
+                raise Exception("Directory `dl/` is already empty or unreachable.")
+            files = await resp.json()
+
+        if not isinstance(files, list):
+            files = [files]
+
+        tree_items =[]
+        for f in files:
+            tree_items.append({"path": f"dl/{f['name']}", "mode": "100644", "type": "blob", "sha": None})
+
+        default_header = "## 🔗 Direct Download Links\n\n"
+        async with session.post(f"{api_base}/git/blobs", json={
+            "content": base64.b64encode(default_header.encode('utf-8')).decode('utf-8'),
+            "encoding": "base64"
+        }) as resp:
+            blob_data = await resp.json()
+            tree_items.append({"path": "Links.md", "mode": "100644", "type": "blob", "sha": blob_data['sha']})
+
+    await _update_repo_tree(user, tree_items, "🧹 Clear all files [skip ci]")
