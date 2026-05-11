@@ -1,25 +1,10 @@
 import os
 import asyncio
 import re
+import glob
 
 def sanitize_filename(name):
     return re.sub(r'[^\w\.\-\s]', '_', name)
-
-async def split_file(file_path: str, chunk_mb: int, base_name: str, dir_name: str) -> list:
-    chunk_size = chunk_mb * 1024 * 1024
-    parts = []
-    part_num = 1
-    with open(file_path, 'rb') as f:
-        while True:
-            chunk = f.read(chunk_size)
-            if not chunk:
-                break
-            part_path = os.path.join(dir_name, f"{base_name}.zip.{part_num:03d}")
-            with open(part_path, 'wb') as pf:
-                pf.write(chunk)
-            parts.append(part_path)
-            part_num += 1
-    return parts
 
 async def process_archive(file_path: str, comp_mode: str, password: str, updater):
     updater.action_text = "📦 Processing File"
@@ -31,35 +16,35 @@ async def process_archive(file_path: str, comp_mode: str, password: str, updater
     new_base = sanitize_filename(raw_base)
 
 
-
-    if ext == ".zip" and file_size_mb > 90:
-        updater.action_text = "✂️ Splitting existing zip"
-        parts = await split_file(file_path, 90, new_base, dir_name)
-        os.remove(file_path)
-        return parts
-
-
     if comp_mode == "raw" and file_size_mb <= 90:
         final_path = os.path.join(dir_name, f"{new_base}{ext}")
         if file_path != final_path:
             os.rename(file_path, final_path)
         return [final_path]
 
-
-    if comp_mode == "raw" and file_size_mb > 90:
-        updater.action_text = "✂️ Splitting large file"
-        parts = await split_file(file_path, 90, new_base, dir_name)
-        os.remove(file_path)
-        return parts
-
-
-    has_password = password and password != "None"
     zip_path = os.path.join(dir_name, f"{new_base}.zip")
+    has_password = password and password != "None"
+
+
+    cmd = ["7z", "a", "-tzip"]
 
     if has_password:
-        cmd = ["7z", "a", "-tzip", "-mx=9", f"-p{password}", zip_path, file_path]
+        cmd.extend([f"-p{password}", "-mx=9"])
+    elif comp_mode == "raw":
+
+        cmd.append("-mx=0")
     else:
-        cmd = ["zip", "-j", "-9", zip_path, file_path]
+
+        cmd.append("-mx=9")
+
+
+    if file_size_mb > 90:
+        cmd.append("-v90m")
+        updater.action_text = "✂️ Zipping & Splitting (7z)"
+    else:
+        updater.action_text = "📦 Zipping File"
+
+    cmd.extend([zip_path, file_path])
 
     process = await asyncio.create_subprocess_exec(
         *cmd,
@@ -71,16 +56,17 @@ async def process_archive(file_path: str, comp_mode: str, password: str, updater
     if process.returncode != 0:
         raise Exception(f"Archiving failed!\n{stderr.decode('utf-8', 'ignore')}")
 
+
     if os.path.exists(file_path):
         os.remove(file_path)
 
-    if not os.path.exists(zip_path):
-        raise Exception("Archiving failed: output zip not found.")
 
-    zip_size_mb = os.path.getsize(zip_path) / (1024 * 1024)
-    if zip_size_mb > 90:
-        parts = await split_file(zip_path, 90, new_base, dir_name)
-        os.remove(zip_path)
+    if file_size_mb > 90:
+        parts = sorted(glob.glob(os.path.join(dir_name, f"{new_base}.zip.*")))
+        if not parts:
+            raise Exception("Archiving failed: output parts not found.")
         return parts
-
-    return [zip_path]
+    else:
+        if not os.path.exists(zip_path):
+            raise Exception("Archiving failed: output zip not found.")
+        return [zip_path]

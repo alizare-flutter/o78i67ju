@@ -16,6 +16,7 @@ from config import YOUTUBE_COOKIES
 
 router = Router()
 task_store = {}
+active_tasks = {} # ! NEW: Dictionary to keep track of running tasks
 
 class DownloadWorkflow(StatesGroup):
     waiting_for_password = State()
@@ -55,7 +56,10 @@ async def process_compression(callback: CallbackQuery, state: FSMContext):
 
     task_store[batch_id]["compression"] = comp_type
     status_msg = await callback.message.edit_text("⏳ **Starting Batch Process...**", parse_mode="Markdown")
-    asyncio.create_task(run_batch(status_msg, batch_id, callback.message.chat.id))
+    
+    # ! FIX: Store the task so it can be cancelled later
+    task = asyncio.create_task(run_batch(status_msg, batch_id, callback.message.chat.id))
+    active_tasks[callback.message.chat.id] = task
 
 @router.message(DownloadWorkflow.waiting_for_password)
 async def handle_password(message: Message, state: FSMContext):
@@ -71,83 +75,113 @@ async def handle_password(message: Message, state: FSMContext):
     task_store[batch_id]["zip_password"] = password
 
     status_msg = await message.answer("⏳ **Starting Batch Process...**", parse_mode="Markdown")
-    asyncio.create_task(run_batch(status_msg, batch_id, message.chat.id))
+    
+    # ! FIX: Store the task so it can be cancelled later
+    task = asyncio.create_task(run_batch(status_msg, batch_id, message.chat.id))
+    active_tasks[message.chat.id] = task
 
 async def run_batch(status_msg: Message, batch_id: str, chat_id: int):
-    data = task_store.pop(batch_id, {})
-    urls = data.get("urls",[])
-    quality = data.get("quality", "best")
-    comp_mode = data.get("compression", "raw")
-    password = data.get("zip_password", "None")
-    is_local = data.get("is_local", False)
+    try:
+        data = task_store.pop(batch_id, {})
+        urls = data.get("urls",[])
+        quality = data.get("quality", "best")
+        comp_mode = data.get("compression", "raw")
+        password = data.get("zip_password", "None")
+        is_local = data.get("is_local", False)
 
-    user = get_user(chat_id)
-    success_links = []
-    failed_links =[]
+        user = get_user(chat_id)
+        success_links =[]
+        failed_links =[]
 
-    await status_msg.edit_text(f"🚀 <b>Processing {len(urls)} link(s)...</b>\nPlease wait.", parse_mode="HTML")
+        await status_msg.edit_text(f"🚀 <b>Processing {len(urls)} link(s)...</b>\nPlease wait.", parse_mode="HTML")
 
-    for idx, url in enumerate(urls, 1):
-        file_msg = None
-        try:
-            safe_url = html.escape(url[:40])
-            file_msg = await status_msg.answer(
-                f"🔄 <b>[{idx}/{len(urls)}] Processing:</b> <code>{safe_url}...</code>",
-                parse_mode="HTML",
-                disable_web_page_preview=True
-            )
-            updater = ProgressUpdater(file_msg, action_text="Downloading File")
-
-            downloaded_file = None
-            if is_local:
-                downloaded_file = url
-            else:
-                media_domains =["youtube.com", "youtu.be", "twitch.tv", "reddit.com", "vimeo.com", "soundcloud.com"]
-                if is_bunkr_url(url):
-                    downloaded_file = await download_bunkr(url, updater)
-                elif any(domain in url for domain in media_domains):
-                    downloaded_file = await download_media(url, quality, updater, YOUTUBE_COOKIES)
-                else:
-                    downloaded_file = await download_direct(url, updater)
-
-            if not downloaded_file or not os.path.exists(downloaded_file):
-                raise Exception("Failed to retrieve file.")
-
+        for idx, url in enumerate(urls, 1):
+            file_msg = None
             try:
-                final_files = await process_archive(downloaded_file, comp_mode, password, updater)
+                safe_url = html.escape(url[:40])
+                file_msg = await status_msg.answer(
+                    f"🔄 <b>[{idx}/{len(urls)}] Processing:</b> <code>{safe_url}...</code>",
+                    parse_mode="HTML",
+                    disable_web_page_preview=True
+                )
+                updater = ProgressUpdater(file_msg, action_text="Downloading File")
+
+                downloaded_file = None
+                if is_local:
+                    downloaded_file = url
+                else:
+                    media_domains =["youtube.com", "youtu.be", "twitch.tv", "reddit.com", "vimeo.com", "soundcloud.com"]
+                    if is_bunkr_url(url):
+                        downloaded_file = await download_bunkr(url, updater)
+                    elif any(domain in url for domain in media_domains):
+                        downloaded_file = await download_media(url, quality, updater, YOUTUBE_COOKIES)
+                    else:
+                        downloaded_file = await download_direct(url, updater)
+
+                if not downloaded_file or not os.path.exists(downloaded_file):
+                    raise Exception("Failed to retrieve file.")
+
                 try:
-                    raw_links = await push_to_github(chat_id, user, final_files, updater)
-                    success_links.extend(raw_links)
-                    await file_msg.delete()
+                    final_files = await process_archive(downloaded_file, comp_mode, password, updater)
+                    try:
+                        raw_links = await push_to_github(chat_id, user, final_files, updater)
+                        success_links.extend(raw_links)
+                        await file_msg.delete()
+                    finally:
+                        for f in final_files:
+                            if os.path.exists(f): os.remove(f)
                 finally:
-                    for f in final_files:
-                        if os.path.exists(f): os.remove(f)
-            finally:
-                if downloaded_file and not is_local and os.path.exists(downloaded_file):
-                    os.remove(downloaded_file)
+                    # ! CancelledError will trigger this finally block naturally
+                    if downloaded_file and not is_local and os.path.exists(downloaded_file):
+                        os.remove(downloaded_file)
 
-        except Exception as e:
-            error_text = html.escape(str(e).replace('\n', ' '))
-            if len(error_text) > 200:
-                error_text = error_text[:200] + "..."
+            except Exception as e:
+                error_text = html.escape(str(e).replace('\n', ' '))
+                if len(error_text) > 200:
+                    error_text = error_text[:200] + "..."
 
-            failed_links.append(f"❌ <code>{html.escape(url[:30])}</code> -> {error_text}")
+                failed_links.append(f"❌ <code>{html.escape(url[:30])}</code> -> {error_text}")
 
-            if file_msg:
-                try:
-                    await file_msg.edit_text(f"❌ <b>[{idx}/{len(urls)}] Failed!</b>\n<code>{error_text}</code>", parse_mode="HTML")
-                except:
-                    pass
+                if file_msg:
+                    try:
+                        await file_msg.edit_text(f"❌ <b>[{idx}/{len(urls)}] Failed!</b>\n<code>{error_text}</code>", parse_mode="HTML")
+                    except:
+                        pass
 
-        if idx < len(urls):
-            await asyncio.sleep(5)
+            if idx < len(urls):
+                await asyncio.sleep(5)
 
-    final_text = f"🏁 <b>Batch Completed! ({len(urls)} Links)</b>\n\n"
-    if success_links:
-        links_str = "\n\n".join(success_links)
-        final_text += f"✅ <b>Successful Uploads:</b>\n{links_str}\n\n"
-    if failed_links:
-        fails_str = "\n".join(failed_links)
-        final_text += f"❌ <b>Failed Uploads:</b>\n{fails_str}"
+        # ! FIX: Smart chunking for long text
+        final_text = f"🏁 <b>Batch Completed! ({len(urls)} Links)</b>\n\n"
+        if success_links:
+            links_str = "\n\n".join(success_links)
+            final_text += f"✅ <b>Successful Uploads:</b>\n{links_str}\n\n"
+        if failed_links:
+            fails_str = "\n".join(failed_links)
+            final_text += f"❌ <b>Failed Uploads:</b>\n{fails_str}"
 
-    await status_msg.edit_text(final_text, parse_mode="HTML", disable_web_page_preview=True)
+        if len(final_text) <= 4000:
+            await status_msg.edit_text(final_text, parse_mode="HTML", disable_web_page_preview=True)
+        else:
+            await status_msg.edit_text("🏁 <b>Batch Completed!</b>\nSending results...", parse_mode="HTML")
+            lines = final_text.split('\n')
+            chunk = ""
+            for line in lines:
+                if len(chunk) + len(line) + 1 > 4000:
+                    await status_msg.answer(chunk, parse_mode="HTML", disable_web_page_preview=True)
+                    chunk = line + "\n"
+                    await asyncio.sleep(1)
+                else:
+                    chunk += line + "\n"
+            if chunk.strip():
+                await status_msg.answer(chunk, parse_mode="HTML", disable_web_page_preview=True)
+
+    # ! FIX: Handle task cancellation securely
+    except asyncio.CancelledError:
+        try:
+            await status_msg.edit_text("🛑 <b>Operation Cancelled!</b>\nProcess stopped and temporary files are cleared.", parse_mode="HTML")
+        except:
+            pass
+        raise
+    finally:
+        active_tasks.pop(chat_id, None)

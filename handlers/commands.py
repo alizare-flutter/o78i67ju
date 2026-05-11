@@ -3,7 +3,9 @@ from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message
 from database.crud import create_or_update_user, get_user
+from github_integration.git_manager import delete_file_from_github, clear_github_repo
 from config import YOUTUBE_COOKIES
+from handlers.callbacks import active_tasks
 
 router = Router()
 
@@ -49,3 +51,43 @@ async def cmd_status(message: Message):
 
     text = f"📊 **Status:**\n\n🔑 **User Token:** {t_st}\n📁 **User Repo:** {r_st}\n🍪 **Global Cookies:** {c_st}"
     await message.answer(text, parse_mode="Markdown")
+@router.message(Command("del"))
+async def cmd_delete_file(message: Message):
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer("⚠️ **Usage:** `/del <filename.ext>`\nExample: `/del Video_123.mp4`", parse_mode="Markdown")
+        return
+
+    user = get_user(message.from_user.id)
+    if not user or not user.github_token:
+        return await message.answer("⚠️ GitHub token not set.")
+
+    filename = args[1].strip()
+    status = await message.answer(f"⏳ Deleting `{filename}` from GitHub...", parse_mode="Markdown")
+    try:
+        await delete_file_from_github(user, filename)
+        await status.edit_text(f"✅ **Deleted successfully!**\n`{filename}` was removed from Repo and Links.md.", parse_mode="Markdown")
+    except Exception as e:
+        await status.edit_text(f"❌ **Failed to delete:**\n`{str(e)}`", parse_mode="Markdown")
+
+@router.message(Command("clear_repo"))
+async def cmd_clear_repo(message: Message):
+    user = get_user(message.from_user.id)
+    if not user or not user.github_token:
+        return await message.answer("⚠️ GitHub token not set.")
+
+    status = await message.answer("🧹 **Clearing repository...**\nDeleting all files in `dl/` and resetting Links.md.", parse_mode="Markdown")
+    try:
+        await clear_github_repo(user)
+        await status.edit_text("✅ **Repository Cleared!**\nAll files have been successfully deleted.", parse_mode="Markdown")
+    except Exception as e:
+        await status.edit_text(f"❌ **Failed to clear repo:**\n`{str(e)}`", parse_mode="Markdown")
+
+@router.message(Command("stop"))
+async def cmd_stop(message: Message):
+    user_id = message.from_user.id
+    if user_id in active_tasks:
+        active_tasks[user_id].cancel()
+        await message.answer("🛑 **Stopping process...**\nPlease wait a moment for cleanup.", parse_mode="Markdown")
+    else:
+        await message.answer("⚠️ You have no active downloads/uploads running.", parse_mode="Markdown")

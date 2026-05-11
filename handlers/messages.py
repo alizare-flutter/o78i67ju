@@ -55,12 +55,16 @@ async def handle_text(message: Message, state: FSMContext):
     else:
         await ask_compression(message, batch_id)
 
+# fix: improved audio metadata extraction and filename sanitization
 @router.message(F.document | F.video | F.photo | F.audio)
 async def handle_file(message: Message, state: FSMContext):
     user = get_user(message.from_user.id)
     if not user or not user.github_token:
         await message.answer("⚠️ Please set your token via /set_token first.")
         return
+
+    def clean_fname(name: str) -> str:
+        return re.sub(r'[\\/*?:"<>|]', "", name).strip()
 
     if message.document:
         file_name = message.document.file_name or f"Document_{message.message_id}"
@@ -71,7 +75,17 @@ async def handle_file(message: Message, state: FSMContext):
         file_id = message.video.file_id
         file_size = message.video.file_size or 0
     elif message.audio:
-        file_name = message.audio.file_name or f"Audio_{message.message_id}.mp3"
+        if message.audio.performer and message.audio.title:
+            raw_name = f"{message.audio.performer} - {message.audio.title}.mp3"
+            file_name = clean_fname(raw_name)
+        elif message.audio.file_name:
+            file_name = message.audio.file_name
+        elif message.caption:
+            clean_cap = clean_fname(message.caption.split('\n')[0][:50])
+            file_name = f"{clean_cap}.mp3" if clean_cap else f"Audio_{message.message_id}.mp3"
+        else:
+            file_name = f"Audio_{message.message_id}.mp3"
+
         file_id = message.audio.file_id
         file_size = message.audio.file_size or 0
     else:
