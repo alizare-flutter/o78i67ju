@@ -11,7 +11,10 @@
 - 🎬 **Media Extraction:** Integrated with `yt-dlp` to download videos from YouTube, Twitch, Vimeo, Reddit, SoundCloud, and more.
 - 🔓 **Bunkr Bypass:** Built-in custom API decryptor to download directly from Bunkr domains without restrictions.
 - 📁 **Telegram File Support:** Forward or upload any local file (Document, Video, Audio, Photo) directly to the bot. **Supports large files up to 2GB via Pyrogram!**
-- 🗜️ **Smart Archiving & Splitting:** Automatically uses `7-Zip` to compress files. Files larger than `90MB` are split into `.zip.001`, `.zip.002` parts to bypass GitHub's file size limit. Password protection is supported.
+- 🚀 **Dual Upload Engine (NEW):** Choose your preferred upload method directly in Telegram:
+  - **⚡ API Method:** Lightning fast processing but limits file split parts to **50MB**.
+  - **🐢 Git Clone Method:** Uses a safe shallow clone, allowing file split parts up to **95MB**.
+- 🗜️ **Smart Archiving & Splitting:** Automatically uses `7-Zip` to compress files. Dynamically splits large files based on your chosen upload method (50MB or 95MB) to seamlessly bypass GitHub's limits. Password protection is supported.
 - 📝 **Auto `Links.md` Generator:** Automatically updates a `Links.md` file in your repository with categorized download links and timestamps.
 - 📊 **Live Progress Bar:** Clean and non-spammy progress updates inside Telegram.
 - 🔁 **Smart Cookie Fallback:** Automatically retries downloads without cookies if cookie-based download fails.
@@ -82,10 +85,6 @@ TG_API_HASH=your_api_hash_here
 # YouTube Cookies — Optional (see cookie setup section below)
 # Option A: Path to a cookies.txt file on your server
 YOUTUBE_COOKIES=youtube_cookies.txt
-
-# Option B: Paste the entire cookie content in double quotes
-# YOUTUBE_COOKIES="# Netscape HTTP Cookie File
-# .youtube.com   TRUE   /   TRUE   ..."
 ```
 
 ---
@@ -102,7 +101,7 @@ pm2 start bot.py --name "rgit-bot" --interpreter ./venv/bin/python
 pm2 save
 ```
 
-> ⚠️ **Important Note for YouTube Cookies:** If you plan to use `YOUTUBE_COOKIES` to bypass YouTube restrictions, it is highly recommended to run the bot using **`screen`** instead of `PM2`. `PM2` often creates an isolated environment that may fail to initialize the dependencies (like node/deno) required for cookie-based authentication.
+> ⚠️ **Important Note for YouTube Cookies:** If you plan to use `YOUTUBE_COOKIES` to bypass YouTube restrictions, it is highly recommended to run the bot using **`screen`** instead of `PM2`. `PM2` often creates an isolated environment that may fail to initialize the dependencies required for cookie-based authentication.
 
 ---
 
@@ -114,8 +113,11 @@ pm2 save
 | `/set_token <PAT>` | Link your GitHub Personal Access Token *(requires `Contents: Write` permission)* |
 | `/set_repo <username/repo>` | Set your target GitHub repository |
 | `/status` | Check your current configuration |
+| `/del <filename.ext>` | Safely delete a specific file from your repo and `Links.md` |
+| `/clear_repo` | Completely wipe all uploaded files and reset `Links.md` |
+| `/stop` | Cancel the currently running download/upload task |
 
-> 💡 Just send any **URL** or **Telegram File** to the bot, choose your quality/compression via inline buttons, and get your raw direct links!
+> 💡 **Usage:** Just send any **URL** or **Telegram File** to the bot. Choose your desired quality, compression type, and **Upload Method (API vs Git)** via the inline buttons, and you will receive your raw direct links!
 
 ---
 
@@ -123,9 +125,9 @@ pm2 save
 
 Telegram's standard Bot API restricts file downloads to **20MB**. To bypass this and download files up to **2GB**, you must provide your Telegram API credentials.
 
-1. Log in to[my.telegram.org](https://my.telegram.org).
+1. Log in to [my.telegram.org](https://my.telegram.org).
 2. Go to **API development tools**.
-3. Create a new application (if you haven't already).
+3. Create a new application.
 4. Copy your **App api_id** and **App api_hash**.
 5. Add them to your `.env` file under `TG_API_ID` and `TG_API_HASH`.
 
@@ -138,8 +140,8 @@ YouTube may block downloads from server IPs. Providing cookies from a logged-in 
 > ⚠️ **Use a secondary/burner Google account** — never your main account.
 
 **Step 1 — Install the browser extension:**
--[Chrome — Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
--[Firefox — Get cookies.txt LOCALLY](https://addons.mozilla.org/en-US/firefox/addon/get-cookies-txt-locally/)
+- [Chrome — Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
+- [Firefox — Get cookies.txt LOCALLY](https://addons.mozilla.org/en-US/firefox/addon/get-cookies-txt-locally/)
 
 **Step 2 — Export cookies:**
 Log in to YouTube, click the extension, and export as `cookies.txt`.
@@ -150,15 +152,11 @@ Upload `cookies.txt` to your bot's directory, then in `.env`:
 YOUTUBE_COOKIES=youtube_cookies.txt
 ```
 
-**Step 4 — Restart the bot.**
-
-> 💡 **Note:** The bot automatically retries without cookies if cookie-based download fails, so it works even if your cookies expire.
-
 ---
 
 ## 📦 How to Extract Split Zip Files (.zip.001, .zip.002)
 
-Since GitHub limits file sizes to 100MB, the bot splits large files into multiple parts (`.zip.001`, `.zip.002`, etc.). Here is how to easily extract them:
+Since GitHub has file size limits, the bot splits large files into multiple parts (`.zip.001`, `.zip.002`, etc.) based on your chosen upload method.
 
 ### 📱 On Android (Termux)
 1. Install `p7zip`:
@@ -166,70 +164,24 @@ Since GitHub limits file sizes to 100MB, the bot splits large files into multipl
    pkg update
    pkg install p7zip
    ```
-2. Navigate to your download folder and extract the **first part** (it will automatically find and merge the rest of the parts):
+2. Navigate to your download folder and extract the **first part** (it will automatically find and merge the rest):
    ```bash
    7z x your_file_name.zip.001
    ```
 
 ### 💻 On Windows / PC
 1. Download all parts (`.001`, `.002`, etc.) and put them in the **same folder**.
-2. Install [7-Zip](https://www.7-zip.org/) or[WinRAR](https://www.win-rar.com/).
+2. Install [7-Zip](https://www.7-zip.org/) or [WinRAR](https://www.win-rar.com/).
 3. Right-click on the **`.zip.001`** file and select **Extract Here**.
-
----
-
-## 📁 Project Structure
-
-```
-.
-├── bot.py                    # Entry point
-├── config.py                 # Environment config
-├── requirements.txt
-├── .env                      # Your secrets (never commit this!)
-├── core/
-│   ├── archiver.py           # 7zip compression & splitting
-│   ├── bunkr_engine.py       # Bunkr API bypass downloader
-│   ├── downloader.py         # Aria2c direct downloader
-│   ├── progress.py           # Telegram progress bar
-│   ├── tg_downloader.py      # Pyrogram engine for large files
-│   └── ytdlp_engine.py       # yt-dlp media downloader
-├── database/
-│   ├── models.py             # SQLAlchemy models
-│   └── crud.py               # DB operations
-├── github_integration/
-│   └── git_manager.py        # Git clone/push logic
-└── handlers/
-    ├── commands.py           # Bot commands
-    ├── messages.py           # URL & file handlers
-    └── callbacks.py          # Inline keyboard callbacks
-```
-
----
-
-## 🔑 GitHub PAT Setup
-
-1. Go to **GitHub → Settings → Developer Settings → Personal Access Tokens → Tokens (classic)**
-2. Click **Generate new token (classic)**
-3. Give it a name, set expiration, and check **`repo` → `Contents: Write`**
-4. Copy the token and send `/set_token <your_token>` to the bot
 
 ---
 
 ## ⚠️ Important Notes
 
-- GitHub has a **100MB hard limit** per file. The bot automatically splits files at **90MB** to stay safe.
+- GitHub has a **100MB hard limit** per file. The **API** method splits at 50MB (due to Base64 size inflation), while the **Git Clone** method securely pushes parts up to 95MB.
 - The `Links.md` file in your repo is updated automatically with every upload and includes Tehran (IR) timestamps.
-- `tmp_downloads/` is used as a working directory and is cleaned up after each upload.
+- `tmp_downloads/` is used as a working directory and is cleaned up automatically.
 - Do **not** commit your `.env` file or `youtube_cookies.txt` — add them to `.gitignore`.
-
-```gitignore
-.env
-youtube_cookies.txt
-tmp_downloads/
-database/bot.db
-```
-
----
 
 <div align="center">
   <p>Made with ❤️ — Pull requests welcome!</p>
