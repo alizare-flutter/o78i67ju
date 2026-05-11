@@ -18,13 +18,18 @@ async def process_archive(file_path: str, comp_mode: str, password: str, split_s
     if comp_mode == "raw" and file_size_mb <= split_size:
         final_path = os.path.join(dir_name, f"{new_base}{ext}")
         if file_path != final_path:
+            if os.path.exists(final_path):
+                os.remove(final_path)
             os.rename(file_path, final_path)
         return [final_path]
+
+    if ext == ".zip" or os.path.join(dir_name, f"{new_base}.zip") == file_path:
+        new_base = f"{new_base}_RGit"
 
     zip_path = os.path.join(dir_name, f"{new_base}.zip")
     has_password = password and password != "None"
 
-    cmd = ["7z", "a", "-tzip"]
+    cmd =["7z", "a", "-tzip"]
 
     if has_password:
         cmd.extend([f"-p{password}", "-mx=9"])
