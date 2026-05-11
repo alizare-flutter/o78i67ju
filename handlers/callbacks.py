@@ -1,3 +1,4 @@
+# file name ./handlers/callbacks.py
 import os
 import asyncio
 import html
@@ -16,7 +17,7 @@ from config import YOUTUBE_COOKIES
 
 router = Router()
 task_store = {}
-active_tasks = {} 
+active_tasks = {}
 
 class DownloadWorkflow(StatesGroup):
     waiting_for_password = State()
@@ -25,20 +26,6 @@ async def ask_compression(message: Message, batch_id: str):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📄 Raw (No Zip)", callback_data=f"comp_raw_{batch_id}")],[InlineKeyboardButton(text="📦 Zip (Max Compression)", callback_data=f"comp_zip_{batch_id}")],[InlineKeyboardButton(text="🔐 Zip with Password", callback_data=f"comp_pass_{batch_id}")]
     ])
     await message.answer("📥 **Ready!**\nHow should I process the batch?", reply_markup=keyboard, parse_mode="Markdown")
-
-async def ask_upload_method(message_or_query, batch_id: str):
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⚡ API (Fast | 50MB Limit)", callback_data=f"up_api_{batch_id}")],[InlineKeyboardButton(text="🐢 Git Clone (Safe | 95MB Limit)", callback_data=f"up_git_{batch_id}")]
-    ])
-    text = (
-        "🚀 **Choose Upload Method:**\n\n"
-        "⚡ **API:** Very fast, but limits file parts to 50MB.\n"
-        "🐢 **Git Clone:** Normal clone, handles up to 95MB parts."
-    )
-    
-    if isinstance(message_or_query, Message):
-        await message_or_query.answer(text, reply_markup=keyboard, parse_mode="Markdown")
-    else:
-        await message_or_query.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
 
 @router.callback_query(F.data.startswith("qual_"))
 async def process_quality(callback: CallbackQuery, state: FSMContext):
@@ -69,7 +56,10 @@ async def process_compression(callback: CallbackQuery, state: FSMContext):
         return
 
     task_store[batch_id]["compression"] = comp_type
-    await ask_upload_method(callback, batch_id)
+    status_msg = await callback.message.edit_text("⏳ **Starting Batch Process...**", parse_mode="Markdown")
+
+    task = asyncio.create_task(run_batch(status_msg, batch_id, callback.message.chat.id))
+    active_tasks[callback.message.chat.id] = task
 
 @router.message(DownloadWorkflow.waiting_for_password)
 async def handle_password(message: Message, state: FSMContext):
@@ -84,22 +74,9 @@ async def handle_password(message: Message, state: FSMContext):
     task_store[batch_id]["compression"] = "zip_pass"
     task_store[batch_id]["zip_password"] = password
 
-    await ask_upload_method(message, batch_id)
-
-@router.callback_query(F.data.startswith("up_"))
-async def process_upload_method(callback: CallbackQuery, state: FSMContext):
-    parts = callback.data.split("_")
-    up_type = parts[1] 
-    batch_id = parts[2] if len(parts) > 2 else ""
-
-    if batch_id not in task_store:
-        return await callback.answer("⚠️ Session expired!", show_alert=True)
-
-    task_store[batch_id]["upload_method"] = up_type
-    status_msg = await callback.message.edit_text("⏳ **Starting Batch Process...**", parse_mode="Markdown")
-    
-    task = asyncio.create_task(run_batch(status_msg, batch_id, callback.message.chat.id))
-    active_tasks[callback.message.chat.id] = task
+    status_msg = await message.answer("⏳ **Starting Batch Process...**", parse_mode="Markdown")
+    task = asyncio.create_task(run_batch(status_msg, batch_id, message.chat.id))
+    active_tasks[message.chat.id] = task
 
 async def run_batch(status_msg: Message, batch_id: str, chat_id: int):
     try:
@@ -109,9 +86,6 @@ async def run_batch(status_msg: Message, batch_id: str, chat_id: int):
         comp_mode = data.get("compression", "raw")
         password = data.get("zip_password", "None")
         is_local = data.get("is_local", False)
-        upload_method = data.get("upload_method", "api")
-        
-        split_size = 50 if upload_method == "api" else 95
 
         user = get_user(chat_id)
         success_links = []
@@ -146,9 +120,9 @@ async def run_batch(status_msg: Message, batch_id: str, chat_id: int):
                     raise Exception("Failed to retrieve file.")
 
                 try:
-                    final_files = await process_archive(downloaded_file, comp_mode, password, split_size, updater)
+                    final_files = await process_archive(downloaded_file, comp_mode, password, updater)
                     try:
-                        raw_links = await push_to_github(chat_id, user, final_files, upload_method, updater)
+                        raw_links = await push_to_github(chat_id, user, final_files, updater)
                         success_links.extend(raw_links)
                         await file_msg.delete()
                     finally:
