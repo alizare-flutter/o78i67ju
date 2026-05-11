@@ -1,3 +1,4 @@
+# file name ./core/archiver.py
 import os
 import asyncio
 import re
@@ -15,8 +16,7 @@ async def process_archive(file_path: str, comp_mode: str, password: str, updater
     ext = os.path.splitext(file_path)[1].lower()
     new_base = sanitize_filename(raw_base)
 
-
-    if comp_mode == "raw" and file_size_mb <= 90:
+    if comp_mode == "raw" and file_size_mb <= 95:
         final_path = os.path.join(dir_name, f"{new_base}{ext}")
         if file_path != final_path:
             os.rename(file_path, final_path)
@@ -25,21 +25,17 @@ async def process_archive(file_path: str, comp_mode: str, password: str, updater
     zip_path = os.path.join(dir_name, f"{new_base}.zip")
     has_password = password and password != "None"
 
-
-    cmd = ["7z", "a", "-tzip"]
+    cmd =["7z", "a", "-tzip"]
 
     if has_password:
         cmd.extend([f"-p{password}", "-mx=9"])
     elif comp_mode == "raw":
-
         cmd.append("-mx=0")
     else:
-
         cmd.append("-mx=9")
 
-
-    if file_size_mb > 90:
-        cmd.append("-v90m")
+    if file_size_mb > 95:
+        cmd.append("-v95m")
         updater.action_text = "✂️ Zipping & Splitting (7z)"
     else:
         updater.action_text = "📦 Zipping File"
@@ -56,12 +52,10 @@ async def process_archive(file_path: str, comp_mode: str, password: str, updater
     if process.returncode != 0:
         raise Exception(f"Archiving failed!\n{stderr.decode('utf-8', 'ignore')}")
 
-
     if os.path.exists(file_path):
         os.remove(file_path)
 
-
-    if file_size_mb > 90:
+    if file_size_mb > 95:
         parts = sorted(glob.glob(os.path.join(dir_name, f"{new_base}.zip.*")))
         if not parts:
             raise Exception("Archiving failed: output parts not found.")
@@ -69,4 +63,4 @@ async def process_archive(file_path: str, comp_mode: str, password: str, updater
     else:
         if not os.path.exists(zip_path):
             raise Exception("Archiving failed: output zip not found.")
-        return [zip_path]
+        return[zip_path]

@@ -1,14 +1,34 @@
+# file name ./github_integration/git_manager.py
 import os
 import asyncio
 import aiohttp
 import base64
 import urllib.parse
 import html
+import shutil
+import uuid
 from datetime import datetime, timedelta
 from database.models import User
 from core.progress import ProgressUpdater
 
 git_locks = {}
+
+async def run_cmd(*args, cwd=None, hide_token=None):
+    process = await asyncio.create_subprocess_exec(
+        *args,
+        cwd=cwd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await process.communicate()
+    if process.returncode != 0:
+        err = stderr.decode('utf-8', 'ignore')
+        cmd_str = ' '.join(args)
+        if hide_token:
+            err = err.replace(hide_token, "***")
+            cmd_str = cmd_str.replace(hide_token, "***")
+        raise Exception(f"Git Command failed: {cmd_str}\n{err}")
+    return stdout.decode('utf-8', 'ignore')
 
 async def push_to_github(user_id: int, user: User, file_paths: list, updater: ProgressUpdater):
     repo = user.github_repo
@@ -24,64 +44,44 @@ async def push_to_github(user_id: int, user: User, file_paths: list, updater: Pr
     updater.update_sync(5, "-", "-")
 
     async with git_locks[user_id]:
-        updater.action_text = "Connecting to GitHub API"
+        updater.action_text = "Cloning Repo (Blobless)"
         updater.update_sync(10, "-", "-")
 
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Accept": "application/vnd.github.v3+json",
-            "User-Agent": "RGit-Bot"
-        }
-        api_base = f"https://api.github.com/repos/{repo}"
+        clone_dir = os.path.abspath(os.path.join("tmp_downloads", f"rgit_clone_{uuid.uuid4().hex[:8]}"))
+        os.makedirs(clone_dir, exist_ok=True)
 
-        async with aiohttp.ClientSession(headers=headers) as session:
-            async with session.get(f"{api_base}/git/refs/heads/main") as resp:
-                if resp.status != 200:
-                    err = await resp.text()
-                    raise Exception(f"Failed to fetch repo refs. Check Token/Repo name.\n{err}")
-                ref_data = await resp.json()
-                commit_sha = ref_data['object']['sha']
+        try:
+            repo_url = f"https://{token}@github.com/{repo}.git"
 
-            async with session.get(f"{api_base}/git/commits/{commit_sha}") as resp:
-                commit_data = await resp.json()
-                base_tree_sha = commit_data['tree']['sha']
+            await run_cmd("git", "clone", "--no-checkout", "--filter=blob:none", "--depth=1", repo_url, clone_dir, hide_token=token)
 
-            tree_items = []
-            links = []
-            uploaded_filenames =[]
+            await run_cmd("git", "config", "user.name", "RGit Bot", cwd=clone_dir)
+            await run_cmd("git", "config", "user.email", "bot@rgit.bot", cwd=clone_dir)
+
+            try:
+                await run_cmd("git", "checkout", "HEAD", "--", "Links.md", cwd=clone_dir)
+            except Exception:
+                pass
+
+            dl_dir = os.path.join(clone_dir, "dl")
+            os.makedirs(dl_dir, exist_ok=True)
+
+            links =[]
+            added_files = ["Links.md"]
             total_files = len(file_paths)
             tehran_time = (datetime.utcnow() + timedelta(hours=3, minutes=30)).strftime("%Y-%m-%d %H:%M")
             new_links_content = f"### 📅 {tehran_time} (IR Time)\n"
 
             for i, fp in enumerate(file_paths):
                 fname = os.path.basename(fp)
-                updater.action_text = f"Uploading ({i+1}/{total_files})"
+                updater.action_text = f"Copying ({i+1}/{total_files})"
                 updater.update_sync(20 + (50 * i / total_files), fname[:10], "-")
 
-                with open(fp, "rb") as f:
-                    file_data = f.read()
+                dest_path = os.path.join(dl_dir, fname)
+                shutil.move(fp, dest_path)
+                added_files.append(f"dl/{fname}")
 
-                b64_content = base64.b64encode(file_data).decode('utf-8')
-
-                async with session.post(f"{api_base}/git/blobs", json={
-                    "content": b64_content,
-                    "encoding": "base64"
-                }) as resp:
-                    if resp.status != 201:
-                        err = await resp.text()
-                        raise Exception(f"Failed to upload Blob for {fname}\n{err}")
-                    blob_data = await resp.json()
-                    blob_sha = blob_data['sha']
-
-                tree_items.append({
-                    "path": f"dl/{fname}",
-                    "mode": "100644",
-                    "type": "blob",
-                    "sha": blob_sha
-                })
-                uploaded_filenames.append(fname)
-
-                size_mb = len(file_data) / (1024 * 1024)
+                size_mb = os.path.getsize(dest_path) / (1024 * 1024)
                 size_str = f"{size_mb / 1024:.2f} GB" if size_mb >= 1024 else f"{size_mb:.2f} MB"
                 encoded_name = urllib.parse.quote(fname)
                 raw_url = f"https://github.com/{repo}/raw/main/dl/{encoded_name}"
@@ -93,16 +93,14 @@ async def push_to_github(user_id: int, user: User, file_paths: list, updater: Pr
 
             updater.action_text = "Updating Links.md"
             updater.update_sync(80, "-", "-")
-
-            links_md_path = "Links.md"
-            links_md_content = ""
-
-            async with session.get(f"{api_base}/contents/{links_md_path}") as resp:
-                if resp.status == 200:
-                    file_info = await resp.json()
-                    links_md_content = base64.b64decode(file_info['content']).decode('utf-8')
+            links_md_path = os.path.join(clone_dir, "Links.md")
 
             default_header = "## 🔗 Direct Download Links\n\n"
+            links_md_content = ""
+            if os.path.exists(links_md_path):
+                with open(links_md_path, "r", encoding="utf-8") as f:
+                    links_md_content = f.read()
+
             if links_md_content:
                 split_marker = "### 📅"
                 if split_marker in links_md_content:
@@ -121,54 +119,25 @@ async def push_to_github(user_id: int, user: User, file_paths: list, updater: Pr
 
             final_links_md = preserved_header + new_links_content + "\n" + old_links
 
-            async with session.post(f"{api_base}/git/blobs", json={
-                "content": base64.b64encode(final_links_md.encode('utf-8')).decode('utf-8'),
-                "encoding": "base64"
-            }) as resp:
-                if resp.status == 201:
-                    blob_data = await resp.json()
-                    tree_items.append({
-                        "path": links_md_path,
-                        "mode": "100644",
-                        "type": "blob",
-                        "sha": blob_data['sha']
-                    })
+            with open(links_md_path, "w", encoding="utf-8") as f:
+                f.write(final_links_md)
 
             updater.action_text = "Committing to GitHub"
             updater.update_sync(90, "-", "-")
 
-            async with session.post(f"{api_base}/git/trees", json={
-                "base_tree": base_tree_sha,
-                "tree": tree_items
-            }) as resp:
-                if resp.status != 201:
-                    err = await resp.text()
-                    raise Exception(f"Failed to create tree.\n{err}")
-                tree_data = await resp.json()
-                new_tree_sha = tree_data['sha']
+            await run_cmd("git", "add", *added_files, cwd=clone_dir)
+            await run_cmd("git", "commit", "-m", "✨ Add new files via Blobless Clone [skip ci]", cwd=clone_dir)
 
-            async with session.post(f"{api_base}/git/commits", json={
-                "message": "✨ Add new files via API [skip ci]",
-                "tree": new_tree_sha,
-                "parents": [commit_sha]
-            }) as resp:
-                if resp.status != 201:
-                    err = await resp.text()
-                    raise Exception(f"Failed to create commit.\n{err}")
-                new_commit_data = await resp.json()
-                new_commit_sha = new_commit_data['sha']
-
-            async with session.patch(f"{api_base}/git/refs/heads/main", json={
-                "sha": new_commit_sha,
-                "force": True
-            }) as resp:
-                if resp.status != 200:
-                    err = await resp.text()
-                    raise Exception(f"Failed to update branch ref.\n{err}")
+            updater.action_text = "Pushing to GitHub"
+            updater.update_sync(95, "-", "-")
+            await run_cmd("git", "push", "origin", "main", cwd=clone_dir, hide_token=token)
 
             updater.action_text = "Upload Complete"
             updater.update_sync(100, "-", "-")
             return links
+        finally:
+            if os.path.exists(clone_dir):
+                shutil.rmtree(clone_dir, ignore_errors=True)
 async def _update_repo_tree(user: User, tree_items: list, commit_message: str):
     repo = user.github_repo
     token = user.github_token
