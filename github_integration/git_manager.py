@@ -1,4 +1,3 @@
-# file name ./github_integration/git_manager.py
 import os
 import asyncio
 import aiohttp
@@ -15,10 +14,7 @@ git_locks = {}
 
 async def run_cmd(*args, cwd=None, hide_token=None):
     process = await asyncio.create_subprocess_exec(
-        *args,
-        cwd=cwd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
+        *args, cwd=cwd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
     stdout, stderr = await process.communicate()
     if process.returncode != 0:
@@ -44,7 +40,7 @@ async def push_to_github(user_id: int, user: User, file_paths: list, updater: Pr
     updater.update_sync(5, "-", "-")
 
     async with git_locks[user_id]:
-        updater.action_text = "Cloning Repo (Safe)"
+        updater.action_text = "Fast Cloning (Sparse)"
         updater.update_sync(10, "-", "-")
 
         clone_dir = os.path.abspath(os.path.join("tmp_downloads", f"rgit_clone_{uuid.uuid4().hex[:8]}"))
@@ -53,8 +49,14 @@ async def push_to_github(user_id: int, user: User, file_paths: list, updater: Pr
         try:
             repo_url = f"https://{token}@github.com/{repo}.git"
 
-            # Normal shallow clone (safe, checks out files properly)
-            await run_cmd("git", "clone", "--depth=1", repo_url, clone_dir, hide_token=token)
+            await run_cmd("git", "clone", "--depth=1", "--no-checkout", "--filter=blob:none", repo_url, clone_dir, hide_token=token)
+            await run_cmd("git", "config", "core.sparseCheckout", "true", cwd=clone_dir)
+            
+            sparse_path = os.path.join(clone_dir, ".git", "info", "sparse-checkout")
+            with open(sparse_path, "w") as f:
+                f.write("/*\n!/dl/\n!/apks/\n")
+            
+            await run_cmd("git", "checkout", "main", cwd=clone_dir)
 
             await run_cmd("git", "config", "user.name", "RGit Bot", cwd=clone_dir)
             await run_cmd("git", "config", "user.email", "bot@rgit.bot", cwd=clone_dir)
@@ -82,14 +84,28 @@ async def push_to_github(user_id: int, user: User, file_paths: list, updater: Pr
 
                 display_text = f"{fname} `{size_str}`"
                 safe_display = html.escape(display_text)
-                links.append(f"📥 <b><a href='{raw_url}'>{safe_display}</a></b>")
-                new_links_content += f"- 📥[{fname}]({raw_url}) `{size_str}`\n"
+                
+                if "_part_" in fname:
+                    icon = "🎬"
+                elif fname.endswith((".mp4", ".mkv", ".avi")):
+                    icon = "🎬"
+                elif fname.endswith((".mp3", ".m4a")):
+                    icon = "🎵"
+                elif ".zip." in fname or fname.endswith(".zip"):
+                    icon = "🗜️"
+                elif fname.endswith(".apk"):
+                    icon = "📱"
+                else:
+                    icon = "📥"
+
+                links.append(f"{icon} <b><a href='{raw_url}'>{safe_display}</a></b>")
+                new_links_content += f"- {icon} [{fname}]({raw_url}) `{size_str}`\n"
 
             updater.action_text = "Updating Links.md"
             updater.update_sync(80, "-", "-")
             links_md_path = os.path.join(clone_dir, "Links.md")
 
-            default_header = "## 🔗 Direct Download Links\n\n"
+            default_header = "## 🔗 Direct Download Links\n> Click on any link below to start downloading directly.<br><br/>\n\n"
             links_md_content = ""
             if os.path.exists(links_md_path):
                 with open(links_md_path, "r", encoding="utf-8") as f:
@@ -116,11 +132,11 @@ async def push_to_github(user_id: int, user: User, file_paths: list, updater: Pr
             with open(links_md_path, "w", encoding="utf-8") as f:
                 f.write(final_links_md)
 
-            updater.action_text = "Committing to GitHub"
+            updater.action_text = "Committing (Sparse)"
             updater.update_sync(90, "-", "-")
 
-            await run_cmd("git", "add", "dl/", "Links.md", cwd=clone_dir)
-            await run_cmd("git", "commit", "-m", "✨ Add new files via Clone [skip ci]", cwd=clone_dir)
+            await run_cmd("git", "add", "--sparse", "dl/", "Links.md", cwd=clone_dir)
+            await run_cmd("git", "commit", "-m", f"✨ Add new files [skip ci]", cwd=clone_dir)
 
             updater.action_text = "Pushing to GitHub"
             updater.update_sync(95, "-", "-")
@@ -132,6 +148,7 @@ async def push_to_github(user_id: int, user: User, file_paths: list, updater: Pr
         finally:
             if os.path.exists(clone_dir):
                 shutil.rmtree(clone_dir, ignore_errors=True)
+
 async def _update_repo_tree(user: User, tree_items: list, commit_message: str):
     repo = user.github_repo
     token = user.github_token
@@ -147,18 +164,11 @@ async def _update_repo_tree(user: User, tree_items: list, commit_message: str):
             commit_data = await resp.json()
             base_tree_sha = commit_data['tree']['sha']
 
-        async with session.post(f"{api_base}/git/trees", json={
-            "base_tree": base_tree_sha,
-            "tree": tree_items
-        }) as resp:
+        async with session.post(f"{api_base}/git/trees", json={"base_tree": base_tree_sha, "tree": tree_items}) as resp:
             tree_data = await resp.json()
             new_tree_sha = tree_data['sha']
 
-        async with session.post(f"{api_base}/git/commits", json={
-            "message": commit_message,
-            "tree": new_tree_sha,
-            "parents":[commit_sha]
-        }) as resp:
+        async with session.post(f"{api_base}/git/commits", json={"message": commit_message, "tree": new_tree_sha, "parents":[commit_sha]}) as resp:
             new_commit_data = await resp.json()
             new_commit_sha = new_commit_data['sha']
 
@@ -184,14 +194,9 @@ async def delete_file_from_github(user: User, filename: str):
                 new_lines.append(line)
         new_links_md = '\n'.join(new_lines)
 
-        tree_items =[
-            {"path": f"dl/{filename}", "mode": "100644", "type": "blob", "sha": None}
-        ]
+        tree_items = [{"path": f"dl/{filename}", "mode": "100644", "type": "blob", "sha": None}]
 
-        async with session.post(f"{api_base}/git/blobs", json={
-            "content": base64.b64encode(new_links_md.encode('utf-8')).decode('utf-8'),
-            "encoding": "base64"
-        }) as resp:
+        async with session.post(f"{api_base}/git/blobs", json={"content": base64.b64encode(new_links_md.encode('utf-8')).decode('utf-8'), "encoding": "base64"}) as resp:
             blob_data = await resp.json()
             tree_items.append({"path": links_md_path, "mode": "100644", "type": "blob", "sha": blob_data['sha']})
 
@@ -217,10 +222,7 @@ async def clear_github_repo(user: User):
             tree_items.append({"path": f"dl/{f['name']}", "mode": "100644", "type": "blob", "sha": None})
 
         default_header = "## 🔗 Direct Download Links\n\n"
-        async with session.post(f"{api_base}/git/blobs", json={
-            "content": base64.b64encode(default_header.encode('utf-8')).decode('utf-8'),
-            "encoding": "base64"
-        }) as resp:
+        async with session.post(f"{api_base}/git/blobs", json={"content": base64.b64encode(default_header.encode('utf-8')).decode('utf-8'), "encoding": "base64"}) as resp:
             blob_data = await resp.json()
             tree_items.append({"path": "Links.md", "mode": "100644", "type": "blob", "sha": blob_data['sha']})
 
