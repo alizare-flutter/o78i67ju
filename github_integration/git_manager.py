@@ -65,12 +65,15 @@ async def push_to_github(user_id: int, user: User, file_paths: list, updater: Pr
             os.makedirs(dl_dir, exist_ok=True)
 
             links =[]
+            uploaded_filenames =[] 
             total_files = len(file_paths)
             tehran_time = (datetime.utcnow() + timedelta(hours=3, minutes=30)).strftime("%Y-%m-%d %H:%M")
             new_links_content = f"### 📅 {tehran_time} (IR Time)\n"
 
             for i, fp in enumerate(file_paths):
                 fname = os.path.basename(fp)
+                uploaded_filenames.append(fname) 
+                
                 updater.action_text = f"Copying ({i+1}/{total_files})"
                 updater.update_sync(20 + (50 * i / total_files), fname[:10], "-")
 
@@ -135,7 +138,11 @@ async def push_to_github(user_id: int, user: User, file_paths: list, updater: Pr
             updater.action_text = "Committing (Sparse)"
             updater.update_sync(90, "-", "-")
 
-            await run_cmd("git", "add", "--sparse", "dl/", "Links.md", cwd=clone_dir)
+            add_args = ["git", "add", "--sparse", "-f", "Links.md"]
+            for fname in uploaded_filenames:
+                add_args.append(f"dl/{fname}")
+                
+            await run_cmd(*add_args, cwd=clone_dir)
             await run_cmd("git", "commit", "-m", f"✨ Add new files [skip ci]", cwd=clone_dir)
 
             updater.action_text = "Pushing to GitHub"
